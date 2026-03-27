@@ -28,9 +28,29 @@ export function suppressRunInput(
   const wasPaused = stdin.isPaused?.() ?? false
   const canSetRawMode = typeof stdin.setRawMode === "function"
 
+  let ctrlCCount = 0
+  let ctrlCTimer: ReturnType<typeof setTimeout> | null = null
+  const DOUBLE_PRESS_WINDOW_MS = 500
+
   const onData = (chunk: string | Uint8Array) => {
     if (includesCtrlC(chunk)) {
-      onInterrupt()
+      ctrlCCount++
+
+      if (ctrlCCount === 1) {
+        // First Ctrl+C: show warning and start timer
+        console.log("\n\u001b[33mPress Ctrl+C again to exit.\u001b[0m")
+        ctrlCTimer = setTimeout(() => {
+          ctrlCCount = 0
+          ctrlCTimer = null
+        }, DOUBLE_PRESS_WINDOW_MS)
+      } else if (ctrlCCount >= 2) {
+        // Second Ctrl+C: actually exit
+        if (ctrlCTimer) {
+          clearTimeout(ctrlCTimer)
+        }
+        ctrlCCount = 0
+        onInterrupt()
+      }
     }
   }
 
@@ -42,6 +62,9 @@ export function suppressRunInput(
 
   return () => {
     stdin.removeListener("data", onData)
+    if (ctrlCTimer) {
+      clearTimeout(ctrlCTimer)
+    }
     if (canSetRawMode) {
       stdin.setRawMode!(wasRaw)
     }
